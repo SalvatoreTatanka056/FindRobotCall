@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.telecom.TelecomManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -31,8 +30,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            // Assumi che tu abbia un tema di Compose, come MyTheme
-            // Sostituisci MyTheme con il nome del tuo tema se è diverso.
             MaterialTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -42,38 +39,27 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-
-        checkCallScreeningRole()
     }
 
-    private fun checkCallScreeningRole() {
-        if (isCallScreeningRoleHeld()) {
-            Toast.makeText(this, "Ruolo Call Screener già attivo.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // Verifica se l'app è impostata come Call Screener
-    private fun isCallScreeningRoleHeld(): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
-            return roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)
-        }
-        return false
-    }
-
-    // Richiede il ruolo di Call Screener all'utente
+    /**
+     * Richiede il ruolo di Call Screener all'utente, necessario per poter intercettare le chiamate.
+     */
     private fun requestCallScreeningRole() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (!isCallScreeningRoleHeld()) {
-                val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
+            val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
+
+            // Verifica se l'app detiene già il ruolo
+            if (roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) {
+                Toast.makeText(this, "Ruolo Call Screener già attivo. ✅", Toast.LENGTH_SHORT).show()
+            } else {
+                // Crea l'intent per richiedere il ruolo all'utente
                 val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING)
 
+                // Avvia l'Activity per la richiesta del ruolo
                 startActivityForResult(intent, REQUEST_ID_SET_CALL_SCREENER)
-            } else {
-                Toast.makeText(this, "Ruolo Call Screener già attivo.", Toast.LENGTH_SHORT).show()
             }
         } else {
-            Toast.makeText(this, "Il CallScreeningService richiede Android 10 (Q) o superiore.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Questa funzionalità richiede Android 10 (Q) o superiore.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -82,15 +68,14 @@ class MainActivity : ComponentActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_ID_SET_CALL_SCREENER) {
             if (resultCode == Activity.RESULT_OK) {
-                Toast.makeText(this, "Permesso Call Screener CONCESSO! ✅", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Permesso Call Screener CONCESSO! Ora l'app può intercettare le chiamate. ✅", Toast.LENGTH_LONG).show()
             } else {
-                Toast.makeText(this, "Permesso Call Screener RIFIUTATO. ❌", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Permesso Call Screener RIFIUTATO. L'app non funzionerà correttamente. ❌", Toast.LENGTH_LONG).show()
             }
         }
     }
 }
 
-// NUOVA FUNZIONE COMPOSABLE AGGIORNATA
 @Composable
 fun MainScreen(onRequestRole: () -> Unit) {
     Column(
@@ -98,18 +83,15 @@ fun MainScreen(onRequestRole: () -> Unit) {
             .fillMaxSize()
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center // Centra verticalmente gli elementi
+        verticalArrangement = Arrangement.Center
     ) {
-        // Testo di aiuto/descrizione
         Text(
-            text = "Questa app ti avvisa con una notifica quando ricevi una chiamata, mostrando immediatamente il numero del chiamante. " +
-                    "Per funzionare, devi concedere il permesso di 'Filtro Chiamate'. L'app NON bloccherà o silenzierà le chiamate.",
+            text = "Questa app ti avvisa con una notifica quando ricevi una chiamata. Per funzionare correttamente, devi concedere il permesso di 'Filtro Chiamate'.",
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(bottom = 24.dp)
         )
 
-        // Pulsante per richiedere il permesso
         Button(onClick = onRequestRole) {
             Text("Richiedi Permesso Call Screener")
         }

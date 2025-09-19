@@ -12,14 +12,18 @@ import android.net.Uri
 import android.os.Build
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
-
+import androidx.core.net.toUri
+import com.google.ai.client.generativeai.GenerativeModel // Rimosso l'uso diretto, ma l'import rimane
 
 class CallScreeningReceiver : CallScreeningService() {
 
     private val CHANNEL_ID = "CallScreeningChannel"
     private val NOTIFICATION_ID = 1
 
-    // Questo metodo viene eseguito quando il servizio viene creato.
+    companion object {
+        const val ACTION_CHECK_GEMINI_SPAM = "com.example.findnumberrobotcall.ACTION_CHECK_GEMINI_SPAM"
+    }
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -52,110 +56,64 @@ class CallScreeningReceiver : CallScreeningService() {
 
             if (incomingNumber != null) {
                 Log.d("CallScreening", "🎉 Numero Intercettato: $incomingNumber")
-
-                //searchNumberOnGoogle(this,incomingNumber)
-                // Invece di bloccare, invia una notifica!
-                sendNumberNotification(incomingNumber)
-
-
-
+                // Invia la notifica che, se cliccata, avvierà il BroadcastReceiver.
+                sendNotificationWithGeminiAction(incomingNumber)
             } else {
                 Log.w("CallScreening", "Numero in arrivo sconosciuto/non disponibile.")
             }
-
-            // IMPORTANTE: Rimuovi la riga 'respondToCall(callDetails, defaultResponse)'.
-            // Senza di essa, il sistema gestirà la chiamata normalmente, facendola squillare.
         }
     }
 
-    /**
-     * Avvia il browser predefinito del dispositivo Android per eseguire una ricerca su Google
-     * con il numero di telefono specificato.
-     * * @param context Il contesto dell'applicazione (es. Activity).
-     * @param phoneNumber Il numero di telefono da cercare.
-     */
-    fun searchNumberOnGoogle(context: Context, phoneNumber: String?) {
+    private fun sendNotificationWithGeminiAction(number: String) {
+        val ACTION_BLOCK_NUMBER = "com.example.findnumberrobotcall.ACTION_BLOCK_NUMBER"
+        val EXTRA_NUMBER_TO_BLOCK = "number_to_block"
 
-        // 1. Controllo base del numero
-        if (phoneNumber.isNullOrBlank()) {
-            Toast.makeText(context, "Il numero di telefono non è valido.", Toast.LENGTH_SHORT).show()
-            return
+        val blockIntent = Intent(ACTION_BLOCK_NUMBER).apply {
+            putExtra(EXTRA_NUMBER_TO_BLOCK, number)
         }
-
-        // 2. Prepara la query di ricerca.
-        // Si consiglia di codificare la stringa per URL per gestire spazi o caratteri speciali.
-        val query = "spam ${phoneNumber}"
-        val encodedQuery = Uri.encode(query)
-
-        // 3. Costruisci l'URI di ricerca di Google.
-        // Questa è l'URL standard di ricerca.
-        val uri = Uri.parse("https://www.google.com/search?q=$encodedQuery")
-
-        // 4. Crea l'Intent per aprire il browser.
-        val intent = Intent(Intent.ACTION_VIEW, uri)
-
-        try {
-            // 5. Avvia l'Activity (il browser)
-            context.startActivity(intent)
-        } catch (e: Exception) {
-            // Gestione degli errori, nel caso non ci sia un'app per gestire l'Intent (molto raro)
-            Toast.makeText(context, "Impossibile aprire il browser per la ricerca.", Toast.LENGTH_LONG).show()
-            e.printStackTrace()
-        }
-    }
-
-    /*private fun sendNumberNotification(number: String) {
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // Sostituisci con un'icona appropriata
-            .setContentTitle("Chiamata in Arrivo")
-            .setContentText("Numero intercettato: $number")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_CALL) // Categoria per le chiamate
-
-        val notificationManager: NotificationManager =
-            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        notificationManager.notify(NOTIFICATION_ID, builder.build())
-    }*/
-
-
-    private fun sendNumberNotification(number: String) {
-
-        // 1. Prepara l'Intent per la ricerca
-        val query = "spam $number"
-        val encodedQuery = Uri.encode(query)
-        val searchUri = Uri.parse("https://www.google.com/search?q=$encodedQuery")
-        val searchIntent = Intent(Intent.ACTION_VIEW, searchUri).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) // Necessario anche qui per coerenza
-        }
-
-        // 2. Crea il PendingIntent
-        val pendingIntent = PendingIntent.getActivity(
+        val blockPendingIntent = PendingIntent.getBroadcast(
             this,
-            number.hashCode(), // Usa un ID unico basato sul numero
-            searchIntent,
-            // FLAG_IMMUTABLE è richiesto da Android S (API 31) in poi
+            number.hashCode() + 1,
+            blockIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // 3. Costruisci la notifica
+        // Crea un Intent per l'azione "Gemini" che sarà gestito dal BroadcastReceiver
+        val geminiIntent = Intent(this, CallActionReceiver::class.java).apply {
+            action = ACTION_CHECK_GEMINI_SPAM
+            putExtra("NUMBER_TO_CHECK", number)
+        }
+
+        val geminiPendingIntent = PendingIntent.getBroadcast(
+            this,
+            number.hashCode(),
+            geminiIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("Chiamata da Verificare")
+            .setContentTitle("Chiamata in Arrivo")
             .setContentText("Chiama il numero: $number")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_CALL)
-
-            // 4. Aggiungi il pulsante 'Cerca Spam'
             .addAction(
-                R.drawable.ic_launcher_foreground, // Assicurati di avere un'icona chiamata ic_search
-                "Cerca Spam",
-                pendingIntent
+                R.drawable.ic_launcher_foreground,
+                "Gemini",
+                geminiPendingIntent
+            )
+            .addAction(
+                R.drawable.ic_launcher_foreground,
+                "Blocca Numero",
+                blockPendingIntent
             )
 
         val notificationManager: NotificationManager =
             getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
         notificationManager.notify(NOTIFICATION_ID, builder.build())
+    }
+
+    private fun sendSpamAlertNotification(number: String, reason: String) {
+        // ... (Questa funzione rimane invariata, ma non è più chiamata in questo file)
     }
 }
